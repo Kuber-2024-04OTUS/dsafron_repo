@@ -1,0 +1,65 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: homework-deployment
+  namespace: homework
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: homework-app
+  template:
+    metadata:
+      labels:
+        app: homework-app
+    spec:
+      volumes:
+      - name: shared-volume
+        emptyDir: {}
+      initContainers:
+      - name: init-container
+        image: busybox
+        command:
+          - sh
+          - -c
+          - |
+            echo "Downloading index.html"
+            wget -O /init/index.html https://safronengineering.com/ || (echo "Download failed" && exit 1)
+            echo "Download complete"
+        volumeMounts:
+        - name: shared-volume
+          mountPath: /init
+      containers:
+      - name: web-server
+        image: python:3.9-slim
+        command:
+          - sh
+          - -c
+          - |
+            echo "Copying index.html to /homework"
+            cp /init/index.html /homework || (echo "Copy failed" && exit 1)
+            echo "Starting web server"
+            python -m http.server 8000 --directory /homework
+        ports:
+        - containerPort: 8000
+        volumeMounts:
+        - name: shared-volume
+          mountPath: /homework
+        lifecycle:
+          preStop:
+            exec:
+              command: ["rm", "/homework/index.html"]
+        readinessProbe:
+          exec:
+            command:
+            - cat
+            - /homework/index.html
+          initialDelaySeconds: 5
+          periodSeconds: 10
+      nodeSelector:
+        homework: "true"  # Задание с *
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
